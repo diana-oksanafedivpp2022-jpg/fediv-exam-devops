@@ -176,11 +176,17 @@ jobs:
           username: root
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            # Pre-load images into Minikube (it can't pull from Docker Hub directly)
+            # Clean up any stuck Helm releases
+            helm uninstall fediv-dev -n dev 2>/dev/null || true
+            helm uninstall fediv-release -n release 2>/dev/null || true
+            sleep 5
+
+            # Load images directly into Minikube's Docker daemon
+            eval $(minikube docker-env)
             docker pull ${{ secrets.DOCKER_USERNAME }}/devops-exam-app:develop
             docker pull ${{ secrets.DOCKER_USERNAME }}/devops-exam-app:1.0.0
-            minikube image load ${{ secrets.DOCKER_USERNAME }}/devops-exam-app:develop
-            minikube image load ${{ secrets.DOCKER_USERNAME }}/devops-exam-app:1.0.0
+            echo "=== Images loaded ==="
+            docker images | grep devops-exam-app
 
             # Dev Deployment
             kubectl create namespace dev --dry-run=client -o yaml | kubectl apply -f -
@@ -188,7 +194,7 @@ jobs:
               --namespace dev \
               --set image.repository=${{ secrets.DOCKER_USERNAME }}/devops-exam-app \
               --set image.tag=develop \
-              --set image.pullPolicy=Never \
+              --set image.pullPolicy=IfNotPresent \
               --set service.type=ClusterIP \
               --set service.port=8000 \
               --set serviceAccount.create=false \
@@ -203,7 +209,7 @@ jobs:
               --namespace release \
               --set image.repository=${{ secrets.DOCKER_USERNAME }}/devops-exam-app \
               --set image.tag=1.0.0 \
-              --set image.pullPolicy=Never \
+              --set image.pullPolicy=IfNotPresent \
               --set service.type=ClusterIP \
               --set service.port=8000 \
               --set serviceAccount.create=false \
