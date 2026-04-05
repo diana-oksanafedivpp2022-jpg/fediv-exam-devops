@@ -60,7 +60,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-push
     outputs:
-      droplet_ip: ${{ steps.outputs.outputs.droplet_ip }}
+      droplet_ip: ${{ steps.get_ip.outputs.droplet_ip }}
     env:
       TF_VAR_do_token: ${{ secrets.DO_TOKEN }}
       TF_VAR_spaces_access_id: ${{ secrets.SPACES_ACCESS_KEY }}
@@ -94,6 +94,7 @@ jobs:
         run: terraform apply -auto-approve -input=false -var="public_key=${{ env.public_key }}"
 
       - name: Get Droplet IP
+        id: get_ip
         run: |
           DROPLET_IP=$(terraform output -raw droplet_ip)
           echo "DROPLET_IP=$DROPLET_IP" >> $GITHUB_ENV
@@ -160,7 +161,7 @@ jobs:
   deploy:
     name: Final Deployment
     runs-on: ubuntu-latest
-    needs: validate
+    needs: [validate, provision]
     steps:
       - name: Deploy to K8s
         uses: appleboy/ssh-action@v1.0.3
