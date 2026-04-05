@@ -93,20 +93,52 @@
         kubectl wait --for=condition=ready pod --all --all-namespaces --timeout=300s
       when: not ansible_check_mode
 
-    - name: Expose Services via Native Port-Forward (8002)
+    - name: Create Systemd Service for Dev Proxy (8002)
       become: yes
-      shell: |
-        nohup kubectl port-forward --address 0.0.0.0 svc/exam-app-dev-service 8002:80 > /dev/null 2>&1 &
-      async: 10
-      poll: 0
+      copy:
+        dest: /etc/systemd/system/k8s-dev.service
+        content: |
+          [Unit]
+          Description=K8s Dev Port Forward
+          After=network.target
+
+          [Service]
+          ExecStart=/usr/local/bin/kubectl port-forward --address 0.0.0.0 svc/exam-app-dev-service 8002:8000
+          Restart=always
+          User=root
+
+          [Install]
+          WantedBy=multi-user.target
       when: not ansible_check_mode
 
-    - name: Expose Services via Native Port-Forward (8003)
+    - name: Create Systemd Service for Release Proxy (8003)
       become: yes
-      shell: |
-        nohup kubectl port-forward --address 0.0.0.0 svc/exam-app-release-service 8003:80 > /dev/null 2>&1 &
-      async: 10
-      poll: 0
+      copy:
+        dest: /etc/systemd/system/k8s-release.service
+        content: |
+          [Unit]
+          Description=K8s Release Port Forward
+          After=network.target
+
+          [Service]
+          ExecStart=/usr/local/bin/kubectl port-forward --address 0.0.0.0 svc/exam-app-release-service 8003:8000
+          Restart=always
+          User=root
+
+          [Install]
+          WantedBy=multi-user.target
+      when: not ansible_check_mode
+
+    - name: Enable and Start Proxy Services
+      become: yes
+      systemd:
+        name: "{{ item }}"
+        state: restarted
+        enabled: yes
+        daemon_reload: yes
+      loop:
+        - k8s-dev
+        - k8s-release
       when: not ansible_check_mode
 
     - name: Diagnose Connectivity Locally
