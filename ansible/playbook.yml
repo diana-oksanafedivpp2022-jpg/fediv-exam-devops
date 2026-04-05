@@ -67,22 +67,13 @@
           - ufw
         state: present
 
-    - name: Enable IPv4 Port Forwarding
-      sysctl:
-        name: net.ipv4.ip_forward
-        value: '1'
-        state: present
-        reload: yes
-
-    - name: Disable firewall in Ubuntu
-      ufw:
-        state: disabled
-
-    - name: Remove Nginx to avoid conflicts
-      apt:
-        name: nginx
-        state: absent
-        purge: yes
+    - name: Clean up networking (Nginx/IPTables)
+      shell: |
+        systemctl stop nginx || true
+        # Clean nat rules
+        iptables -t nat -F || true
+        iptables -F || true
+      ignore_errors: yes
 
     - name: Start Minikube (as root user)
       become: yes
@@ -102,22 +93,20 @@
         kubectl wait --for=condition=ready pod --all --all-namespaces --timeout=300s
       when: not ansible_check_mode
 
-    - name: Setup Direct IPTables Forwarding (8002/8003)
+    - name: Expose Services via Native Port-Forward (8002)
       become: yes
       shell: |
-        MINIKUBE_IP=$(minikube ip)
-        # Clean old rules
-        iptables -t nat -D PREROUTING -p tcp --dport 8002 -j DNAT --to-destination $MINIKUBE_IP:8002 || true
-        iptables -t nat -D PREROUTING -p tcp --dport 8003 -j DNAT --to-destination $MINIKUBE_IP:8003 || true
-        iptables -D FORWARD -p tcp -d $MINIKUBE_IP --dport 8002 -j ACCEPT || true
-        iptables -D FORWARD -p tcp -d $MINIKUBE_IP --dport 8003 -j ACCEPT || true
+        nohup kubectl port-forward --address 0.0.0.0 svc/exam-app-dev-service 8002:80 > /dev/null 2>&1 &
+      async: 10
+      poll: 0
+      when: not ansible_check_mode
 
-        # Add new rules
-        iptables -t nat -A PREROUTING -p tcp --dport 8002 -j DNAT --to-destination $MINIKUBE_IP:8002
-        iptables -t nat -A PREROUTING -p tcp --dport 8003 -j DNAT --to-destination $MINIKUBE_IP:8003
-        iptables -A FORWARD -p tcp -d $MINIKUBE_IP --dport 8002 -j ACCEPT
-        iptables -A FORWARD -p tcp -d $MINIKUBE_IP --dport 8003 -j ACCEPT
-        iptables -t nat -A POSTROUTING -j MASQUERADE
+    - name: Expose Services via Native Port-Forward (8003)
+      become: yes
+      shell: |
+        nohup kubectl port-forward --address 0.0.0.0 svc/exam-app-release-service 8003:80 > /dev/null 2>&1 &
+      async: 10
+      poll: 0
       when: not ansible_check_mode
 
     - name: Diagnose Connectivity Locally
