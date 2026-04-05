@@ -176,50 +176,70 @@ jobs:
           username: root
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            # Copy values to VM (quick hack via cat)
-            cat > /tmp/values-dev.yaml << 'EOF'
+            # Copy values to VM
+            cat > /tmp/values-dev.yaml << 'VALEOF'
             replicaCount: 1
             image:
-              repository: ${{ secrets.DOCKER_USERNAME }}/devops-exam-app
               tag: develop
               pullPolicy: Always
             service:
               type: ClusterIP
               port: 8000
-            EOF
+            serviceAccount:
+              create: false
+            ingress:
+              enabled: false
+            httpRoute:
+              enabled: false
+            autoscaling:
+              enabled: false
+            imagePullSecrets: []
+            VALEOF
 
-            cat > /tmp/values-release.yaml << 'EOF'
-            replicaCount: 2
+            cat > /tmp/values-release.yaml << 'VALEOF'
+            replicaCount: 1
             image:
-              repository: ${{ secrets.DOCKER_USERNAME }}/devops-exam-app
               tag: 1.0.0
               pullPolicy: IfNotPresent
             service:
               type: ClusterIP
               port: 8000
-            EOF
+            serviceAccount:
+              create: false
+            ingress:
+              enabled: false
+            httpRoute:
+              enabled: false
+            autoscaling:
+              enabled: false
+            imagePullSecrets: []
+            VALEOF
 
             # Dev Deployment
             kubectl create namespace dev --dry-run=client -o yaml | kubectl apply -f -
             helm upgrade --install fediv-dev /tmp/app-repo/helm-charts-hello-world \
               --namespace dev -f /tmp/values-dev.yaml \
-              --set serviceAccount.create=false \
-              --set ingress.enabled=false \
-              --set httpRoute.enabled=false \
-              --set autoscaling.enabled=false \
-              --set-json 'imagePullSecrets=[]' \
-              --atomic --timeout 8m
+              --set image.repository=${{ secrets.DOCKER_USERNAME }}/devops-exam-app \
+              --timeout 8m --wait || true
+
+            echo "=== DEV POD STATUS ==="
+            kubectl get pods -n dev
+            echo "=== DEV POD DESCRIBE ==="
+            kubectl describe pods -n dev
+            echo "=== DEV POD LOGS ==="
+            kubectl logs -n dev -l app.kubernetes.io/name=django-hello-world --tail=50 || true
 
             # Release Deployment
             kubectl create namespace release --dry-run=client -o yaml | kubectl apply -f -
             helm upgrade --install fediv-release /tmp/app-repo/helm-charts-hello-world \
               --namespace release -f /tmp/values-release.yaml \
-              --set serviceAccount.create=false \
-              --set ingress.enabled=false \
-              --set httpRoute.enabled=false \
-              --set autoscaling.enabled=false \
-              --set-json 'imagePullSecrets=[]' \
-              --atomic --timeout 8m
+              --set image.repository=${{ secrets.DOCKER_USERNAME }}/devops-exam-app \
+              --timeout 8m --wait || true
+
+            echo "=== RELEASE POD STATUS ==="
+            kubectl get pods -n release
+            echo "=== RELEASE POD DESCRIBE ==="
+            kubectl describe pods -n release
 
             # Create Systemd Proxies
             cat > /etc/systemd/system/kubectl-pf-dev.service << 'EOF'
