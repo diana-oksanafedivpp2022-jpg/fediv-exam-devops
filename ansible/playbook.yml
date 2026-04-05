@@ -87,73 +87,16 @@
       ignore_errors: yes
       when: not ansible_check_mode
 
-    - name: Wait for Kubernetes Pods to be ready
+    - name: Wait for CoreDNS to be ready
       become: yes
       shell: |
-        kubectl wait --for=condition=ready pod --all --all-namespaces --timeout=300s
+        kubectl wait --for=condition=ready pod -l k8s-app=kube-dns -n kube-system --timeout=180s
       when: not ansible_check_mode
-
-    - name: Create Systemd Service for Dev Proxy (8002)
-      become: yes
-      copy:
-        dest: /etc/systemd/system/k8s-dev.service
-        content: |
-          [Unit]
-          Description=K8s Dev Port Forward
-          After=network.target
-
-          [Service]
-          Environment="KUBECONFIG=/root/.kube/config"
-          ExecStart=/usr/local/bin/kubectl port-forward --address 0.0.0.0 svc/exam-app-dev-service 8002:8000
-          Restart=always
-          User=root
-
-          [Install]
-          WantedBy=multi-user.target
-      when: not ansible_check_mode
-
-    - name: Create Systemd Service for Release Proxy (8003)
-      become: yes
-      copy:
-        dest: /etc/systemd/system/k8s-release.service
-        content: |
-          [Unit]
-          Description=K8s Release Port Forward
-          After=network.target
-
-          [Service]
-          Environment="KUBECONFIG=/root/.kube/config"
-          ExecStart=/usr/local/bin/kubectl port-forward --address 0.0.0.0 svc/exam-app-release-service 8003:8000
-          Restart=always
-          User=root
-
-          [Install]
-          WantedBy=multi-user.target
-      when: not ansible_check_mode
-
-    - name: Enable and Start Proxy Services
-      become: yes
-      systemd:
-        name: "{{ item }}"
-        state: restarted
-        enabled: yes
-        daemon_reload: yes
-      loop:
-        - k8s-dev
-        - k8s-release
-      when: not ansible_check_mode
-
-    - name: Diagnose Connectivity Locally
-      become: yes
-      shell: |
-        MINIKUBE_IP=$(minikube ip)
-        curl -I http://$MINIKUBE_IP:30002
-        curl -I http://$MINIKUBE_IP:30003
-      register: diag_res
+      register: wait_result
       ignore_errors: yes
-      when: not ansible_check_mode
 
-    - name: Print Diagnosis
-      debug:
-        msg: "Diagnosis: {{ diag_res.stdout_lines }}"
-      when: not ansible_check_mode and diag_res is defined
+    - name: Show Minikube status
+      become: yes
+      shell: minikube status
+      when: not ansible_check_mode
+      ignore_errors: yes
