@@ -152,10 +152,15 @@ jobs:
             if [ -d /tmp/app-repo ]; then rm -rf /tmp/app-repo; fi
             git clone https://github.com/YulianSalo/devops-exam-pt2.git /tmp/app-repo
             
-            helm upgrade --install melnychuk-dev /tmp/app-repo/helm-charts-hello-world \
+            helm upgrade --install fediv-dev /tmp/app-repo/helm-charts-hello-world \
               --namespace dev --create-namespace \
               --set image.repository=${{ secrets.DOCKER_USERNAME }}/devops-exam-app \
-              --set image.tag=develop --dry-run
+              --set image.tag=develop \
+              --set serviceAccount.create=false \
+              --set ingress.enabled=false \
+              --set httpRoute.enabled=false \
+              --set autoscaling.enabled=false \
+              --dry-run
 
   # ── Етап 4: Реальний Деплой ──────────────────────────────────────────────────
   deploy:
@@ -195,13 +200,23 @@ jobs:
 
             # Dev Deployment
             kubectl create namespace dev --dry-run=client -o yaml | kubectl apply -f -
-            helm upgrade --install melnychuk-dev /tmp/app-repo/helm-charts-hello-world \
-              --namespace dev -f /tmp/values-dev.yaml --atomic --timeout 5m
+            helm upgrade --install fediv-dev /tmp/app-repo/helm-charts-hello-world \
+              --namespace dev -f /tmp/values-dev.yaml \
+              --set serviceAccount.create=false \
+              --set ingress.enabled=false \
+              --set httpRoute.enabled=false \
+              --set autoscaling.enabled=false \
+              --atomic --timeout 5m
 
             # Release Deployment
             kubectl create namespace release --dry-run=client -o yaml | kubectl apply -f -
-            helm upgrade --install melnychuk-release /tmp/app-repo/helm-charts-hello-world \
-              --namespace release -f /tmp/values-release.yaml --atomic --timeout 5m
+            helm upgrade --install fediv-release /tmp/app-repo/helm-charts-hello-world \
+              --namespace release -f /tmp/values-release.yaml \
+              --set serviceAccount.create=false \
+              --set ingress.enabled=false \
+              --set httpRoute.enabled=false \
+              --set autoscaling.enabled=false \
+              --atomic --timeout 5m
 
             # Create Systemd Proxies
             cat > /etc/systemd/system/kubectl-pf-dev.service << 'EOF'
