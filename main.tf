@@ -126,7 +126,7 @@ resource "digitalocean_droplet" "node" {
 
 # 4. Storage Bucket
 resource "digitalocean_spaces_bucket" "bucket" {
-  name   = "fediv-bucket"
+  name   = "fediv-bucket1"
   region = "fra1"
 }
 
