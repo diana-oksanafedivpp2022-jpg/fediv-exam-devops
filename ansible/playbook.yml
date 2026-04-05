@@ -67,6 +67,11 @@
           - ufw
         state: present
 
+    - name: Install Nginx for stable proxy
+      apt:
+        name: nginx
+        state: present
+
     - name: Disable firewall in Ubuntu
       ufw:
         state: disabled
@@ -83,31 +88,33 @@
       ignore_errors: yes
       when: not ansible_check_mode
 
-    - name: Configure Minikube Proxy
-      become: yes
-      become_user: root
-      shell: |
-        nohup kubectl proxy --address='0.0.0.0' --accept-hosts='^*$' > /dev/null 2>&1 &
-      async: 10
-      poll: 0
-      when: 
-        - not ansible_check_mode
-        - minikube_start_result is succeeded
-
-    - name: Forward Dev Port (8002)
+    - name: Wait for Kubernetes Pods to be ready
       become: yes
       shell: |
-        MINIKUBE_IP=$(minikube ip)
-        nohup socat TCP-LISTEN:8002,fork,reuseaddr TCP:$MINIKUBE_IP:8002 > /dev/null 2>&1 &
-      async: 10
-      poll: 0
+        kubectl wait --for=condition=ready pod --all --all-namespaces --timeout=300s
       when: not ansible_check_mode
 
-    - name: Forward Release Port (8003)
+    - name: Configure Nginx Proxy
       become: yes
       shell: |
         MINIKUBE_IP=$(minikube ip)
-        nohup socat TCP-LISTEN:8003,fork,reuseaddr TCP:$MINIKUBE_IP:8003 > /dev/null 2>&1 &
-      async: 10
-      poll: 0
+        cat <<EOF > /etc/nginx/sites-available/k8s-proxy
+        server {
+            listen 8002;
+            location / {
+                proxy_pass http://$MINIKUBE_IP:8002;
+                proxy_set_header Host \$host;
+            }
+        }
+        server {
+            listen 8003;
+            location / {
+                proxy_pass http://$MINIKUBE_IP:8003;
+                proxy_set_header Host \$host;
+            }
+        }
+        EOF
+        ln -sf /etc/nginx/sites-available/k8s-proxy /etc/nginx/sites-enabled/
+        rm -f /etc/nginx/sites-enabled/default
+        systemctl restart nginx
       when: not ansible_check_mode

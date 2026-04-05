@@ -140,3 +140,12 @@ jobs:
             --private-key deploy_key \
             -u root --ssh-common-args='-o StrictHostKeyChecking=no' \
             -a "kubectl apply -f /root/k8s/"
+
+      - name: Deployment Summary
+        if: always()
+        run: |
+          echo "========================================================="
+          echo "DEPLOYMENT COMPLETE!"
+          echo "Dev Environment:     http://${{ env.DROPLET_IP }}:8002"
+          echo "Release Environment: http://${{ env.DROPLET_IP }}:8003"
+          echo "========================================================="
