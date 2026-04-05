@@ -32,4 +32,4 @@ jobs:
             -backend-config="secret_key=${{ secrets.SPACES_SECRET_KEY }}"
 
       - name: Terraform Destroy
-        run: terraform destroy -auto-approve -input=false
+        run: terraform destroy -auto-approve -input=false -var="public_key=dummy-key"

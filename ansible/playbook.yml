@@ -1,0 +1,78 @@
+---
+- name: Install DevOps Tools
+  hosts: all
+  become: yes
+  vars:
+    minikube_version: "latest"
+    helm_version: "latest"
+
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install dependencies
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+          - conntrack
+        state: present
+
+    - name: Install Docker
+      apt:
+        name: docker.io
+        state: present
+
+    - name: Ensure Docker is started and enabled
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Add user to docker group
+      user:
+        name: ubuntu
+        groups: docker
+        append: yes
+
+    - name: Download Kubectl
+      get_url:
+        url: "https://dl.k8s.io/release/{{ lookup('pipe', 'curl -L -s https://dl.k8s.io/release/stable.txt') }}/bin/linux/amd64/kubectl"
+        dest: /usr/local/bin/kubectl
+        mode: '0755'
+
+    - name: Download Minikube
+      get_url:
+        url: https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+        dest: /usr/local/bin/minikube
+        mode: '0755'
+
+    - name: Install Helm
+      shell: |
+        curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+      args:
+        creates: /usr/local/bin/helm
+
+    - name: Start Minikube (as ubuntu user)
+      become: yes
+      become_user: ubuntu
+      shell: |
+        minikube start --driver=docker --listen-address=0.0.0.0
+      args:
+        creates: /home/ubuntu/.minikube/machines/minikube/config.json
+      register: minikube_start_result
+      ignore_errors: yes
+
+    - name: Configure Minikube Proxy
+      become: yes
+      become_user: ubuntu
+      shell: |
+        kubectl proxy --address='0.0.0.0' --accept-hosts='^*$' &
+      async: 10
+      poll: 0
+      when: minikube_start_result is succeeded

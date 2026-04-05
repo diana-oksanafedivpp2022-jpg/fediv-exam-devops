@@ -38,10 +38,24 @@ variable "spaces_secret_key" {
   sensitive   = true
 }
 
+variable "ssh_key_name" {
+  description = "Name of the SSH key in DigitalOcean"
+  default     = "fediv-ssh-key"
+}
+
+variable "public_key" {
+  description = "Public SSH key for Ansible access"
+}
+
 provider "digitalocean" {
   token             = var.do_token
   spaces_access_id  = var.spaces_access_id
   spaces_secret_key = var.spaces_secret_key
+}
+
+resource "digitalocean_ssh_key" "ansible_key" {
+  name       = var.ssh_key_name
+  public_key = var.public_key
 }
 
 # 1. Virtual Private Cloud (VPC)
@@ -107,6 +121,7 @@ resource "digitalocean_droplet" "node" {
   image    = "ubuntu-24-04-x64"
   region   = "fra1"
   vpc_uuid = digitalocean_vpc.vpc.id
+  ssh_keys = [digitalocean_ssh_key.ansible_key.id]
 }
 
 # 4. Storage Bucket
