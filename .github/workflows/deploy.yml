@@ -176,72 +176,50 @@ jobs:
           username: root
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            # Copy values to VM
-            cat > /tmp/values-dev.yaml << 'VALEOF'
-            replicaCount: 1
-            image:
-              tag: develop
-              pullPolicy: Always
-            service:
-              type: ClusterIP
-              port: 8000
-            serviceAccount:
-              create: false
-            ingress:
-              enabled: false
-            httpRoute:
-              enabled: false
-            autoscaling:
-              enabled: false
-            imagePullSecrets: []
-            VALEOF
-
-            cat > /tmp/values-release.yaml << 'VALEOF'
-            replicaCount: 1
-            image:
-              tag: 1.0.0
-              pullPolicy: IfNotPresent
-            service:
-              type: ClusterIP
-              port: 8000
-            serviceAccount:
-              create: false
-            ingress:
-              enabled: false
-            httpRoute:
-              enabled: false
-            autoscaling:
-              enabled: false
-            imagePullSecrets: []
-            VALEOF
+            # Pre-load images into Minikube (it can't pull from Docker Hub directly)
+            docker pull ${{ secrets.DOCKER_USERNAME }}/devops-exam-app:develop
+            docker pull ${{ secrets.DOCKER_USERNAME }}/devops-exam-app:1.0.0
+            minikube image load ${{ secrets.DOCKER_USERNAME }}/devops-exam-app:develop
+            minikube image load ${{ secrets.DOCKER_USERNAME }}/devops-exam-app:1.0.0
 
             # Dev Deployment
             kubectl create namespace dev --dry-run=client -o yaml | kubectl apply -f -
             helm upgrade --install fediv-dev /tmp/app-repo/helm-charts-hello-world \
-              --namespace dev -f /tmp/values-dev.yaml \
+              --namespace dev \
               --set image.repository=${{ secrets.DOCKER_USERNAME }}/devops-exam-app \
-              --timeout 8m --wait || true
-
-            echo "=== DEV POD STATUS ==="
-            kubectl get pods -n dev
-            echo "=== DEV POD DESCRIBE ==="
-            kubectl describe pods -n dev
-            echo "=== DEV POD LOGS ==="
-            kubectl logs -n dev -l app.kubernetes.io/name=django-hello-world --tail=50 || true
+              --set image.tag=develop \
+              --set image.pullPolicy=Never \
+              --set service.type=ClusterIP \
+              --set service.port=8000 \
+              --set serviceAccount.create=false \
+              --set serviceAccount.automount=false \
+              --set ingress.enabled=false \
+              --set httpRoute.enabled=false \
+              --set autoscaling.enabled=false
 
             # Release Deployment
             kubectl create namespace release --dry-run=client -o yaml | kubectl apply -f -
             helm upgrade --install fediv-release /tmp/app-repo/helm-charts-hello-world \
-              --namespace release -f /tmp/values-release.yaml \
+              --namespace release \
               --set image.repository=${{ secrets.DOCKER_USERNAME }}/devops-exam-app \
-              --timeout 8m --wait || true
+              --set image.tag=1.0.0 \
+              --set image.pullPolicy=Never \
+              --set service.type=ClusterIP \
+              --set service.port=8000 \
+              --set serviceAccount.create=false \
+              --set serviceAccount.automount=false \
+              --set ingress.enabled=false \
+              --set httpRoute.enabled=false \
+              --set autoscaling.enabled=false
 
-            echo "=== RELEASE POD STATUS ==="
+            # Wait for pods to pull images and start
+            sleep 30
+            echo "=== DEV PODS ==="
+            kubectl get pods -n dev
+            echo "=== RELEASE PODS ==="
             kubectl get pods -n release
-            echo "=== RELEASE POD DESCRIBE ==="
-            kubectl describe pods -n release
 
-            # Create Systemd Proxies
+            # Port-forward dev → 8002
             cat > /etc/systemd/system/kubectl-pf-dev.service << 'EOF'
             [Unit]
             Description=kubectl port-forward dev on 8002
@@ -250,11 +228,13 @@ jobs:
             Environment="KUBECONFIG=/root/.kube/config"
             ExecStart=/usr/local/bin/kubectl port-forward -n dev svc/django-hello-world-svc 8002:8000 --address=0.0.0.0
             Restart=always
+            RestartSec=10
             User=root
             [Install]
             WantedBy=multi-user.target
             EOF
 
+            # Port-forward release → 8003
             cat > /etc/systemd/system/kubectl-pf-release.service << 'EOF'
             [Unit]
             Description=kubectl port-forward release on 8003
@@ -263,6 +243,7 @@ jobs:
             Environment="KUBECONFIG=/root/.kube/config"
             ExecStart=/usr/local/bin/kubectl port-forward -n release svc/django-hello-world-svc 8003:8000 --address=0.0.0.0
             Restart=always
+            RestartSec=10
             User=root
             [Install]
             WantedBy=multi-user.target
@@ -271,3 +252,5 @@ jobs:
             systemctl daemon-reload
             systemctl enable kubectl-pf-dev kubectl-pf-release
             systemctl restart kubectl-pf-dev kubectl-pf-release
+
+
