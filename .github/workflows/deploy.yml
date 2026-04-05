@@ -1,14 +1,66 @@
-name: Terraform Deploy
+name: Deploy Application
 
 on:
-  push:
-    branches: [ main ]
   workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to deploy"
+        required: true
+        default: "both"
+        type: choice
+        options:
+          - both
+          - dev
+          - release
+  push:
+    branches:
+      - main
 
 jobs:
-  terraform:
-    name: "Terraform Build & Deploy"
+  # ── Етап 1: Збірка та завантаження Docker-образів ───────────────────────────
+  build-push:
+    name: Build & Push Docker Images
     runs-on: ubuntu-latest
+    steps:
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Checkout app repo (develop branch)
+        uses: actions/checkout@v4
+        with:
+          repository: YulianSalo/devops-exam-pt2
+          ref: develop
+
+      - name: Build and push develop image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/devops-exam-app:develop
+
+      - name: Checkout app repo (tag 1.0.0)
+        uses: actions/checkout@v4
+        with:
+          repository: YulianSalo/devops-exam-pt2
+          ref: "1.0.0"
+
+      - name: Build and push 1.0.0 image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/devops-exam-app:1.0.0
+
+  # ── Етап 2: Інфраструктура (Terraform + Ansible Base) ────────────────────────
+  provision:
+    name: Provision Infrastructure
+    runs-on: ubuntu-latest
+    needs: build-push
+    outputs:
+      droplet_ip: ${{ steps.outputs.outputs.droplet_ip }}
     env:
       TF_VAR_do_token: ${{ secrets.DO_TOKEN }}
       TF_VAR_spaces_access_id: ${{ secrets.SPACES_ACCESS_KEY }}
@@ -20,17 +72,13 @@ jobs:
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
 
       - name: Generate SSH Key
         run: |
           ssh-keygen -t rsa -b 4096 -f deploy_key -N ""
-          echo "PUBLIC_KEY=$(cat deploy_key.pub)" >> $GITHUB_ENV
-
-      - name: Check Secrets
-        run: |
-          if [ -z "${{ secrets.DO_TOKEN }}" ]; then echo "DO_TOKEN is not set"; exit 1; fi
-          if [ -z "${{ secrets.SPACES_ACCESS_KEY }}" ]; then echo "SPACES_ACCESS_KEY is not set"; exit 1; fi
-          if [ -z "${{ secrets.SPACES_SECRET_KEY }}" ]; then echo "SPACES_SECRET_KEY is not set"; exit 1; fi
+          echo "public_key=$(cat deploy_key.pub)" >> $GITHUB_ENV
 
       - name: Terraform Init
         run: |
@@ -38,121 +86,129 @@ jobs:
             -backend-config="access_key=${{ secrets.SPACES_ACCESS_KEY }}" \
             -backend-config="secret_key=${{ secrets.SPACES_SECRET_KEY }}"
 
-      - name: Terraform Format Check
-        run: terraform fmt -check
-
-      - name: Terraform Validate
-        run: terraform validate -no-color
-
-      - name: Terraform Plan
-        id: plan
-        run: terraform plan -no-color -input=false -var="public_key=${{ env.PUBLIC_KEY }}"
-        continue-on-error: false
-
       - name: Terraform Apply
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         id: apply
-        run: |
-          terraform apply -auto-approve -input=false -var="public_key=${{ env.PUBLIC_KEY }}"
-          echo "DROPLET_IP=$(terraform output -raw droplet_ip)" >> $GITHUB_ENV
+        run: terraform apply -auto-approve -input=false -var="public_key=${{ env.public_key }}"
 
-      - name: Install Ansible
+      - name: Get Droplet IP
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ansible
+          DROPLET_IP=$(terraform output -raw droplet_ip)
+          echo "DROPLET_IP=$DROPLET_IP" >> $GITHUB_ENV
+          echo "droplet_ip=$DROPLET_IP" >> $GITHUB_OUTPUT
 
-      - name: Wait for SSH (parametric node)
-        if: steps.apply.outcome == 'success'
+      - name: Wait for SSH
         run: |
-          echo "Waiting for $DROPLET_IP..."
           until nc -z $DROPLET_IP 22; do
-            echo "SSH is not available yet, waiting 5 seconds..."
+            echo "Waiting for SSH..."
             sleep 5
           done
-          echo "SSH is open, waiting another 10s for service to stabilize..."
           sleep 10
 
-      - name: Ansible Dry-Run (Check Mode)
-        id: ansible_check
-        if: steps.apply.outcome == 'success'
+      - name: Ansible Base Setup
         run: |
-          chmod 600 deploy_key
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > deploy_key_full
+          chmod 600 deploy_key_full
           ansible-playbook -i "$DROPLET_IP," \
-            --private-key deploy_key \
-            -u root --ssh-common-args='-o StrictHostKeyChecking=no' \
-            ansible/playbook.yml --check
-        continue-on-error: false
-
-      - name: Ansible Execution (Install Software)
-        if: steps.ansible_check.outcome == 'success'
-        run: |
-          chmod 600 deploy_key
-          ansible-playbook -i "$DROPLET_IP," \
-            --private-key deploy_key \
-            -u root --ssh-common-args='-o StrictHostKeyChecking=no' \
-            ansible/playbook.yml
-
-      - name: Login to Docker Hub
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Build and Push (Develop)
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        run: |
-          git clone https://github.com/YulianSalo/devops-exam-pt2.git app-dev
-          cd app-dev && git checkout main # Assuming develop code is here or specifically checkout develop
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/exam-app:develop .
-          docker push ${{ secrets.DOCKER_USERNAME }}/exam-app:develop
-
-      - name: Build and Push (Release 1.0.0)
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        run: |
-          git clone https://github.com/YulianSalo/devops-exam-pt2.git app-release
-          cd app-release && git checkout tags/1.0.0
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/exam-app:1.0.0 .
-          docker push ${{ secrets.DOCKER_USERNAME }}/exam-app:1.0.0
-
-      - name: Prepare K8s Manifests
-        run: |
-          sed -i "s/DOCKER_USERNAME/${{ secrets.DOCKER_USERNAME }}/g" k8s/dev.yaml
-          sed -i "s/DOCKER_USERNAME/${{ secrets.DOCKER_USERNAME }}/g" k8s/release.yaml
-
-      - name: K8s Deployment
-        if: steps.apply.outcome == 'success'
-        run: |
-          # Replace DOCKER_USERNAME in manifest
-          sed -i "s/DOCKER_USERNAME/${{ secrets.DOCKER_USERNAME }}/g" k8s/dev.yaml
-          sed -i "s/DOCKER_USERNAME/${{ secrets.DOCKER_USERNAME }}/g" k8s/release.yaml
-          
-          ansible all -i "$DROPLET_IP," \
-            --private-key deploy_key \
-            -u root --ssh-common-args='-o StrictHostKeyChecking=no' \
-            -a "mkdir -p /root/k8s"
-          
-          scp -o StrictHostKeyChecking=no -i deploy_key k8s/*.yaml root@$DROPLET_IP:/root/k8s/
-          
-          ansible all -i "$DROPLET_IP," \
-            --private-key deploy_key \
-            -u root --ssh-common-args='-o StrictHostKeyChecking=no' \
-            -a "kubectl apply -f /root/k8s/"
-
-      - name: Ansible Execution (Software & Proxy)
-        if: steps.apply.outcome == 'success'
-        run: |
-          ansible-playbook -i "$DROPLET_IP," \
-            --private-key deploy_key \
+            --private-key deploy_key_full \
             -u root \
             --ssh-common-args='-o StrictHostKeyChecking=no' \
             ansible/playbook.yml
 
-      - name: Deployment Summary
-        if: always()
+  # ── Етап 3: Валідація (Dry-run) ────────────────────────────────────────────────
+  validate:
+    name: Validate Helm Charts
+    runs-on: ubuntu-latest
+    needs: provision
+    steps:
+      - name: Checkout this repository
+        uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Checkout app repo (for Helm chart)
+        uses: actions/checkout@v4
+        with:
+          repository: YulianSalo/devops-exam-pt2
+          ref: main
+          path: app-repo
+
+      - name: Helm lint
         run: |
-          echo "========================================================="
-          echo "DEPLOYMENT COMPLETE!"
-          echo "Dev Environment:     http://${{ env.DROPLET_IP }}:8002"
-          echo "Release Environment: http://${{ env.DROPLET_IP }}:8003"
-          echo "========================================================="
+          helm lint app-repo/helm-charts-hello-world -f k8s/values-dev.yaml
+          helm lint app-repo/helm-charts-hello-world -f k8s/values-release.yaml
+
+      - name: Helm Dry-run (Remote)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ needs.provision.outputs.droplet_ip }}
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            if [ -d /tmp/app-repo ]; then rm -rf /tmp/app-repo; fi
+            git clone https://github.com/YulianSalo/devops-exam-pt2.git /tmp/app-repo
+            
+            helm upgrade --install melnychuk-dev /tmp/app-repo/helm-charts-hello-world \
+              --namespace dev --create-namespace \
+              --set image.repository=${{ secrets.DOCKER_USERNAME }}/devops-exam-app \
+              --set image.tag=develop --dry-run
+
+  # ── Етап 4: Реальний Деплой ──────────────────────────────────────────────────
+  deploy:
+    name: Final Deployment
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - name: Deploy to K8s
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ needs.provision.outputs.droplet_ip }}
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            # Dev Deployment
+            kubectl create namespace dev --dry-run=client -o yaml | kubectl apply -f -
+            helm upgrade --install melnychuk-dev /tmp/app-repo/helm-charts-hello-world \
+              --namespace dev \
+              --set image.repository=${{ secrets.DOCKER_USERNAME }}/devops-exam-app \
+              --set image.tag=develop \
+              --set service.port=8000 --atomic --timeout 5m
+
+            # Release Deployment
+            kubectl create namespace release --dry-run=client -o yaml | kubectl apply -f -
+            helm upgrade --install melnychuk-release /tmp/app-repo/helm-charts-hello-world \
+              --namespace release \
+              --set image.repository=${{ secrets.DOCKER_USERNAME }}/devops-exam-app \
+              --set image.tag=1.0.0 \
+              --set service.port=8000 --atomic --timeout 5m
+
+            # Create Systemd Proxies
+            cat > /etc/systemd/system/kubectl-pf-dev.service << 'EOF'
+            [Unit]
+            Description=kubectl port-forward dev on 8002
+            After=network.target
+            [Service]
+            Environment="KUBECONFIG=/root/.kube/config"
+            ExecStart=/usr/local/bin/kubectl port-forward -n dev svc/django-hello-world-svc 8002:8000 --address=0.0.0.0
+            Restart=always
+            User=root
+            [Install]
+            WantedBy=multi-user.target
+            EOF
+
+            cat > /etc/systemd/system/kubectl-pf-release.service << 'EOF'
+            [Unit]
+            Description=kubectl port-forward release on 8003
+            After=network.target
+            [Service]
+            Environment="KUBECONFIG=/root/.kube/config"
+            ExecStart=/usr/local/bin/kubectl port-forward -n release svc/django-hello-world-svc 8003:8000 --address=0.0.0.0
+            Restart=always
+            User=root
+            [Install]
+            WantedBy=multi-user.target
+            EOF
+
+            systemctl daemon-reload
+            systemctl enable kubectl-pf-dev kubectl-pf-release
+            systemctl restart kubectl-pf-dev kubectl-pf-release
