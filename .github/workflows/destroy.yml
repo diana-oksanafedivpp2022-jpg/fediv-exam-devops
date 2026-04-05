@@ -19,8 +19,17 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
+      - name: Check Secrets
+        run: |
+          if [ -z "${{ secrets.DO_TOKEN }}" ]; then echo "DO_TOKEN is not set"; exit 1; fi
+          if [ -z "${{ secrets.SPACES_ACCESS_KEY }}" ]; then echo "SPACES_ACCESS_KEY is not set"; exit 1; fi
+          if [ -z "${{ secrets.SPACES_SECRET_KEY }}" ]; then echo "SPACES_SECRET_KEY is not set"; exit 1; fi
+
       - name: Terraform Init
-        run: terraform init
+        run: |
+          terraform init \
+            -backend-config="access_key=${{ secrets.SPACES_ACCESS_KEY }}" \
+            -backend-config="secret_key=${{ secrets.SPACES_SECRET_KEY }}"
 
       - name: Terraform Destroy
         run: terraform destroy -auto-approve -input=false
