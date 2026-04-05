@@ -28,8 +28,20 @@ variable "do_token" {
   sensitive   = true
 }
 
+variable "spaces_access_id" {
+  description = "Spaces Access Key ID"
+  sensitive   = true
+}
+
+variable "spaces_secret_key" {
+  description = "Spaces Secret Key"
+  sensitive   = true
+}
+
 provider "digitalocean" {
-  token = var.do_token
+  token             = var.do_token
+  spaces_access_id  = var.spaces_access_id
+  spaces_secret_key = var.spaces_secret_key
 }
 
 # 1. Virtual Private Cloud (VPC)
