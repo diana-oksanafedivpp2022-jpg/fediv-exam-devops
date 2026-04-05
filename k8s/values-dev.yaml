@@ -1,0 +1,8 @@
+replicaCount: 1
+image:
+  repository: DOCKER_USERNAME/devops-exam-app
+  tag: develop
+  pullPolicy: Always
+service:
+  type: ClusterIP
+  port: 8000

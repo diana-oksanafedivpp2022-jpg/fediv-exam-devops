@@ -138,8 +138,8 @@ jobs:
 
       - name: Helm lint
         run: |
-          helm lint app-repo/helm-charts-hello-world -f k8s/values-dev.yaml
-          helm lint app-repo/helm-charts-hello-world -f k8s/values-release.yaml
+          helm lint app-repo/helm-charts-hello-world -f k8s/values-dev.yaml --set image.repository=${{ secrets.DOCKER_USERNAME }}/devops-exam-app
+          helm lint app-repo/helm-charts-hello-world -f k8s/values-release.yaml --set image.repository=${{ secrets.DOCKER_USERNAME }}/devops-exam-app
 
       - name: Helm Dry-run (Remote)
         uses: appleboy/ssh-action@v1.0.3
@@ -169,21 +169,38 @@ jobs:
           username: root
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
+            # Copy values to VM (quick hack via cat)
+            cat > /tmp/values-dev.yaml << 'EOF'
+            replicaCount: 1
+            image:
+              repository: ${{ secrets.DOCKER_USERNAME }}/devops-exam-app
+              tag: develop
+              pullPolicy: Always
+            service:
+              type: ClusterIP
+              port: 8000
+            EOF
+
+            cat > /tmp/values-release.yaml << 'EOF'
+            replicaCount: 2
+            image:
+              repository: ${{ secrets.DOCKER_USERNAME }}/devops-exam-app
+              tag: 1.0.0
+              pullPolicy: IfNotPresent
+            service:
+              type: ClusterIP
+              port: 8000
+            EOF
+
             # Dev Deployment
             kubectl create namespace dev --dry-run=client -o yaml | kubectl apply -f -
             helm upgrade --install melnychuk-dev /tmp/app-repo/helm-charts-hello-world \
-              --namespace dev \
-              --set image.repository=${{ secrets.DOCKER_USERNAME }}/devops-exam-app \
-              --set image.tag=develop \
-              --set service.port=8000 --atomic --timeout 5m
+              --namespace dev -f /tmp/values-dev.yaml --atomic --timeout 5m
 
             # Release Deployment
             kubectl create namespace release --dry-run=client -o yaml | kubectl apply -f -
             helm upgrade --install melnychuk-release /tmp/app-repo/helm-charts-hello-world \
-              --namespace release \
-              --set image.repository=${{ secrets.DOCKER_USERNAME }}/devops-exam-app \
-              --set image.tag=1.0.0 \
-              --set service.port=8000 --atomic --timeout 5m
+              --namespace release -f /tmp/values-release.yaml --atomic --timeout 5m
 
             # Create Systemd Proxies
             cat > /etc/systemd/system/kubectl-pf-dev.service << 'EOF'
