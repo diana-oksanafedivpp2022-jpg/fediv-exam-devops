@@ -67,14 +67,22 @@
           - ufw
         state: present
 
-    - name: Install Nginx for stable proxy
-      apt:
-        name: nginx
+    - name: Enable IPv4 Port Forwarding
+      sysctl:
+        name: net.ipv4.ip_forward
+        value: '1'
         state: present
+        reload: yes
 
     - name: Disable firewall in Ubuntu
       ufw:
         state: disabled
+
+    - name: Remove Nginx to avoid conflicts
+      apt:
+        name: nginx
+        state: absent
+        purge: yes
 
     - name: Start Minikube (as root user)
       become: yes
@@ -94,27 +102,35 @@
         kubectl wait --for=condition=ready pod --all --all-namespaces --timeout=300s
       when: not ansible_check_mode
 
-    - name: Configure Nginx Proxy
+    - name: Setup Direct IPTables Forwarding (8002/8003)
       become: yes
       shell: |
         MINIKUBE_IP=$(minikube ip)
-        cat <<EOF > /etc/nginx/sites-available/k8s-proxy
-        server {
-            listen 8002;
-            location / {
-                proxy_pass http://$MINIKUBE_IP:8002;
-                proxy_set_header Host \$host;
-            }
-        }
-        server {
-            listen 8003;
-            location / {
-                proxy_pass http://$MINIKUBE_IP:8003;
-                proxy_set_header Host \$host;
-            }
-        }
-        EOF
-        ln -sf /etc/nginx/sites-available/k8s-proxy /etc/nginx/sites-enabled/
-        rm -f /etc/nginx/sites-enabled/default
-        systemctl restart nginx
+        # Clean old rules
+        iptables -t nat -D PREROUTING -p tcp --dport 8002 -j DNAT --to-destination $MINIKUBE_IP:8002 || true
+        iptables -t nat -D PREROUTING -p tcp --dport 8003 -j DNAT --to-destination $MINIKUBE_IP:8003 || true
+        iptables -D FORWARD -p tcp -d $MINIKUBE_IP --dport 8002 -j ACCEPT || true
+        iptables -D FORWARD -p tcp -d $MINIKUBE_IP --dport 8003 -j ACCEPT || true
+
+        # Add new rules
+        iptables -t nat -A PREROUTING -p tcp --dport 8002 -j DNAT --to-destination $MINIKUBE_IP:8002
+        iptables -t nat -A PREROUTING -p tcp --dport 8003 -j DNAT --to-destination $MINIKUBE_IP:8003
+        iptables -A FORWARD -p tcp -d $MINIKUBE_IP --dport 8002 -j ACCEPT
+        iptables -A FORWARD -p tcp -d $MINIKUBE_IP --dport 8003 -j ACCEPT
+        iptables -t nat -A POSTROUTING -j MASQUERADE
       when: not ansible_check_mode
+
+    - name: Diagnose Connectivity Locally
+      become: yes
+      shell: |
+        MINIKUBE_IP=$(minikube ip)
+        curl -I http://$MINIKUBE_IP:30002
+        curl -I http://$MINIKUBE_IP:30003
+      register: diag_res
+      ignore_errors: yes
+      when: not ansible_check_mode
+
+    - name: Print Diagnosis
+      debug:
+        msg: "Diagnosis: {{ diag_res.stdout_lines }}"
+      when: not ansible_check_mode and diag_res is defined

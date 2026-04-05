@@ -91,7 +91,7 @@ resource "digitalocean_firewall" "fw" {
 
   inbound_rule {
     protocol         = "tcp"
-    port_range       = "8000-8003" # Custom ports 8000; 8001; 8002; 8003
+    port_range       = "8000-9999" # Full range for all services
     source_addresses = ["0.0.0.0/0", "::/0"]
   }
 
