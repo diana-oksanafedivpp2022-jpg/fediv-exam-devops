@@ -11,6 +11,7 @@ jobs:
       TF_VAR_do_token: ${{ secrets.DO_TOKEN }}
       AWS_ACCESS_KEY_ID: ${{ secrets.SPACES_ACCESS_KEY }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.SPACES_SECRET_KEY }}
+      AWS_EC2_METADATA_DISABLED: "true"
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4

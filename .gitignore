@@ -1,1 +1,20 @@
-README.md
+# Local terraform state
+terraform.tfstate
+terraform.tfstate.backup
+
+# .terraform directory
+.terraform/
+
+# Variables
+*.tfvars
+*.tfvars.json
+
+# Crash log
+crash.log
+
+# Plan files
+*.tfplan
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
