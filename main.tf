@@ -9,14 +9,15 @@ terraform {
     endpoints {
       s3 = "https://fra1.digitaloceanspaces.com"
     }
-    region                      = "us-east-1"
+    region                      = "fra1" # Changed from us-east-1
     bucket                      = "fediv-terraform-state"
     key                         = "terraform.tfstate"
     skip_credentials_validation = true
     skip_metadata_api_check     = true
     skip_requesting_account_id  = true
     skip_s3_checksum            = true
-    use_path_style              = true
+    skip_region_validation      = true
+    use_path_style              = false
   }
 }
 
