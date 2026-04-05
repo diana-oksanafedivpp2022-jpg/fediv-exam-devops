@@ -91,3 +91,52 @@ jobs:
             --private-key deploy_key \
             -u root --ssh-common-args='-o StrictHostKeyChecking=no' \
             ansible/playbook.yml
+
+      - name: Login to Docker Hub
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and Push (Develop)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          git clone https://github.com/YulianSalo/devops-exam-pt2.git app-dev
+          cd app-dev && git checkout main # Assuming develop code is here or specifically checkout develop
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/exam-app:develop .
+          docker push ${{ secrets.DOCKER_USERNAME }}/exam-app:develop
+
+      - name: Build and Push (Release 1.0.0)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          git clone https://github.com/YulianSalo/devops-exam-pt2.git app-release
+          cd app-release && git checkout tags/1.0.0
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/exam-app:1.0.0 .
+          docker push ${{ secrets.DOCKER_USERNAME }}/exam-app:1.0.0
+
+      - name: Prepare K8s Manifests
+        run: |
+          sed -i "s/DOCKER_USERNAME/${{ secrets.DOCKER_USERNAME }}/g" k8s/dev.yaml
+          sed -i "s/DOCKER_USERNAME/${{ secrets.DOCKER_USERNAME }}/g" k8s/release.yaml
+
+      - name: K8s Validation (Dry-Run)
+        if: steps.ansible_check.outcome == 'success'
+        run: |
+          ansible all -i "$DROPLET_IP," \
+            --private-key deploy_key \
+            -u root --ssh-common-args='-o StrictHostKeyChecking=no' \
+            -m copy -a "src=k8s/ dest=/root/k8s/"
+          
+          ansible all -i "$DROPLET_IP," \
+            --private-key deploy_key \
+            -u root --ssh-common-args='-o StrictHostKeyChecking=no' \
+            -a "kubectl apply -f /root/k8s/ --dry-run=client"
+
+      - name: K8s Deployment
+        if: steps.ansible_check.outcome == 'success'
+        run: |
+          ansible all -i "$DROPLET_IP," \
+            --private-key deploy_key \
+            -u root --ssh-common-args='-o StrictHostKeyChecking=no' \
+            -a "kubectl apply -f /root/k8s/"

@@ -64,7 +64,8 @@
       become: yes
       become_user: root
       shell: |
-        minikube start --driver=docker --listen-address=0.0.0.0 --force
+        minikube start --driver=docker --listen-address=0.0.0.0 --force \
+          --extra-config=apiserver.service-node-port-range=8000-9000
       args:
         creates: /root/.minikube/machines/minikube/config.json
       register: minikube_start_result
