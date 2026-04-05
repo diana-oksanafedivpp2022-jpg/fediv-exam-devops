@@ -6,18 +6,20 @@ terraform {
     }
   }
   backend "s3" {
-    endpoints {
+    endpoints = {
       s3 = "https://fra1.digitaloceanspaces.com"
     }
-    region                      = "fra1" # Changed from us-east-1
-    bucket                      = "fediv-terraform-state"
-    key                         = "terraform.tfstate"
+    bucket = "fediv-terraform-state"
+    key    = "terraform.tfstate"
+
+    # Required by S3 backend but ignored by DigitalOcean
+    region = "us-east-1"
+
     skip_credentials_validation = true
     skip_metadata_api_check     = true
-    skip_requesting_account_id  = true
-    skip_s3_checksum            = true
     skip_region_validation      = true
-    use_path_style              = false
+    skip_requesting_account_id  = true
+    use_path_style              = true
   }
 }
 
