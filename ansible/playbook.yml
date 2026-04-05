@@ -60,6 +60,24 @@
       args:
         creates: /usr/local/bin/helm
 
+    - name: Install networking tools
+      apt:
+        name:
+          - socat
+          - ufw
+        state: present
+
+    - name: Open firewall ports in Ubuntu
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop:
+        - "22"
+        - "8001"
+        - "8002"
+        - "8003"
+
     - name: Start Minikube (as root user)
       become: yes
       become_user: root
@@ -82,3 +100,21 @@
       when: 
         - not ansible_check_mode
         - minikube_start_result is succeeded
+
+    - name: Forward Dev Port (8002)
+      become: yes
+      shell: |
+        MINIKUBE_IP=$(minikube ip)
+        socat TCP-LISTEN:8002,fork,reuseaddr TCP:$MINIKUBE_IP:8002 &
+      async: 10
+      poll: 0
+      when: not ansible_check_mode
+
+    - name: Forward Release Port (8003)
+      become: yes
+      shell: |
+        MINIKUBE_IP=$(minikube ip)
+        socat TCP-LISTEN:8003,fork,reuseaddr TCP:$MINIKUBE_IP:8003 &
+      async: 10
+      poll: 0
+      when: not ansible_check_mode
