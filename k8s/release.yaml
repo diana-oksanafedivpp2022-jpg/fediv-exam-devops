@@ -18,10 +18,10 @@ spec:
         env: release
     spec:
       containers:
-      - name: app
-        image: DOCKER_USERNAME/exam-app:1.0.0
-        ports:
-        - containerPort: 80
+        - name: exam-app
+          image: DOCKER_USERNAME/exam-app:master
+          ports:
+            - containerPort: 8000
 ---
 apiVersion: v1
 kind: Service

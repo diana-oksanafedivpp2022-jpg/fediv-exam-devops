@@ -120,26 +120,33 @@ jobs:
           sed -i "s/DOCKER_USERNAME/${{ secrets.DOCKER_USERNAME }}/g" k8s/dev.yaml
           sed -i "s/DOCKER_USERNAME/${{ secrets.DOCKER_USERNAME }}/g" k8s/release.yaml
 
-      - name: K8s Validation (Dry-Run)
-        if: steps.ansible_check.outcome == 'success'
+      - name: K8s Deployment
+        if: steps.apply.outcome == 'success'
         run: |
-          ansible all -i "$DROPLET_IP," \
-            --private-key deploy_key \
-            -u root --ssh-common-args='-o StrictHostKeyChecking=no' \
-            -m copy -a "src=k8s/ dest=/root/k8s/"
+          # Replace DOCKER_USERNAME in manifest
+          sed -i "s/DOCKER_USERNAME/${{ secrets.DOCKER_USERNAME }}/g" k8s/dev.yaml
+          sed -i "s/DOCKER_USERNAME/${{ secrets.DOCKER_USERNAME }}/g" k8s/release.yaml
           
           ansible all -i "$DROPLET_IP," \
             --private-key deploy_key \
             -u root --ssh-common-args='-o StrictHostKeyChecking=no' \
-            -a "kubectl apply -f /root/k8s/ --dry-run=client"
-
-      - name: K8s Deployment
-        if: steps.ansible_check.outcome == 'success'
-        run: |
+            -a "mkdir -p /root/k8s"
+          
+          scp -o StrictHostKeyChecking=no -i deploy_key k8s/*.yaml root@$DROPLET_IP:/root/k8s/
+          
           ansible all -i "$DROPLET_IP," \
             --private-key deploy_key \
             -u root --ssh-common-args='-o StrictHostKeyChecking=no' \
             -a "kubectl apply -f /root/k8s/"
+
+      - name: Ansible Execution (Software & Proxy)
+        if: steps.apply.outcome == 'success'
+        run: |
+          ansible-playbook -i "$DROPLET_IP," \
+            --private-key deploy_key \
+            -u root \
+            --ssh-common-args='-o StrictHostKeyChecking=no' \
+            ansible/playbook.yml
 
       - name: Deployment Summary
         if: always()
