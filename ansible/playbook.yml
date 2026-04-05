@@ -36,7 +36,7 @@
 
     - name: Add user to docker group
       user:
-        name: ubuntu
+        name: root
         groups: docker
         append: yes
 
@@ -58,19 +58,19 @@
       args:
         creates: /usr/local/bin/helm
 
-    - name: Start Minikube (as ubuntu user)
+    - name: Start Minikube (as root user)
       become: yes
-      become_user: ubuntu
+      become_user: root
       shell: |
-        minikube start --driver=docker --listen-address=0.0.0.0
+        minikube start --driver=docker --listen-address=0.0.0.0 --force
       args:
-        creates: /home/ubuntu/.minikube/machines/minikube/config.json
+        creates: /root/.minikube/machines/minikube/config.json
       register: minikube_start_result
       ignore_errors: yes
 
     - name: Configure Minikube Proxy
       become: yes
-      become_user: ubuntu
+      become_user: root
       shell: |
         kubectl proxy --address='0.0.0.0' --accept-hosts='^*$' &
       async: 10

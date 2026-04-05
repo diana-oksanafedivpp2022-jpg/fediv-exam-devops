@@ -69,21 +69,25 @@ jobs:
             echo "SSH is not available yet, waiting 5 seconds..."
             sleep 5
           done
+          echo "SSH is open, waiting another 10s for service to stabilize..."
+          sleep 10
 
       - name: Ansible Dry-Run (Check Mode)
         id: ansible_check
         if: steps.apply.outcome == 'success'
         run: |
+          chmod 600 deploy_key
           ansible-playbook -i "$DROPLET_IP," \
             --private-key deploy_key \
-            -u ubuntu --ssh-common-args='-o StrictHostKeyChecking=no' \
+            -u root --ssh-common-args='-o StrictHostKeyChecking=no' \
             ansible/playbook.yml --check
         continue-on-error: false
 
       - name: Ansible Execution (Install Software)
         if: steps.ansible_check.outcome == 'success'
         run: |
+          chmod 600 deploy_key
           ansible-playbook -i "$DROPLET_IP," \
             --private-key deploy_key \
-            -u ubuntu --ssh-common-args='-o StrictHostKeyChecking=no' \
+            -u root --ssh-common-args='-o StrictHostKeyChecking=no' \
             ansible/playbook.yml
