@@ -67,16 +67,9 @@
           - ufw
         state: present
 
-    - name: Open firewall ports in Ubuntu
+    - name: Disable firewall in Ubuntu
       ufw:
-        rule: allow
-        port: "{{ item }}"
-        proto: tcp
-      loop:
-        - "22"
-        - "8001"
-        - "8002"
-        - "8003"
+        state: disabled
 
     - name: Start Minikube (as root user)
       become: yes
@@ -94,7 +87,7 @@
       become: yes
       become_user: root
       shell: |
-        kubectl proxy --address='0.0.0.0' --accept-hosts='^*$' &
+        nohup kubectl proxy --address='0.0.0.0' --accept-hosts='^*$' > /dev/null 2>&1 &
       async: 10
       poll: 0
       when: 
@@ -105,7 +98,7 @@
       become: yes
       shell: |
         MINIKUBE_IP=$(minikube ip)
-        socat TCP-LISTEN:8002,fork,reuseaddr TCP:$MINIKUBE_IP:8002 &
+        nohup socat TCP-LISTEN:8002,fork,reuseaddr TCP:$MINIKUBE_IP:8002 > /dev/null 2>&1 &
       async: 10
       poll: 0
       when: not ansible_check_mode
@@ -114,7 +107,7 @@
       become: yes
       shell: |
         MINIKUBE_IP=$(minikube ip)
-        socat TCP-LISTEN:8003,fork,reuseaddr TCP:$MINIKUBE_IP:8003 &
+        nohup socat TCP-LISTEN:8003,fork,reuseaddr TCP:$MINIKUBE_IP:8003 > /dev/null 2>&1 &
       async: 10
       poll: 0
       when: not ansible_check_mode
