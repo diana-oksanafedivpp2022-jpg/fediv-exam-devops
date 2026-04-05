@@ -6,3 +6,16 @@ image:
 service:
   type: ClusterIP
   port: 8000
+
+serviceAccount:
+  create: false
+  name: ""
+
+ingress:
+  enabled: false
+
+autoscaling:
+  enabled: false
+
+httpRoute:
+  enabled: false
