@@ -33,6 +33,7 @@
         name: docker
         state: started
         enabled: yes
+      when: not ansible_check_mode
 
     - name: Add user to docker group
       user:
@@ -67,6 +68,7 @@
         creates: /root/.minikube/machines/minikube/config.json
       register: minikube_start_result
       ignore_errors: yes
+      when: not ansible_check_mode
 
     - name: Configure Minikube Proxy
       become: yes
@@ -75,4 +77,6 @@
         kubectl proxy --address='0.0.0.0' --accept-hosts='^*$' &
       async: 10
       poll: 0
-      when: minikube_start_result is succeeded
+      when: 
+        - not ansible_check_mode
+        - minikube_start_result is succeeded
