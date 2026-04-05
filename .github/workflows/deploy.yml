@@ -160,6 +160,7 @@ jobs:
               --set ingress.enabled=false \
               --set httpRoute.enabled=false \
               --set autoscaling.enabled=false \
+              --set-json 'imagePullSecrets=[]' \
               --dry-run
 
   # ── Етап 4: Реальний Деплой ──────────────────────────────────────────────────
@@ -206,7 +207,8 @@ jobs:
               --set ingress.enabled=false \
               --set httpRoute.enabled=false \
               --set autoscaling.enabled=false \
-              --atomic --timeout 5m
+              --set-json 'imagePullSecrets=[]' \
+              --atomic --timeout 8m
 
             # Release Deployment
             kubectl create namespace release --dry-run=client -o yaml | kubectl apply -f -
@@ -216,7 +218,8 @@ jobs:
               --set ingress.enabled=false \
               --set httpRoute.enabled=false \
               --set autoscaling.enabled=false \
-              --atomic --timeout 5m
+              --set-json 'imagePullSecrets=[]' \
+              --atomic --timeout 8m
 
             # Create Systemd Proxies
             cat > /etc/systemd/system/kubectl-pf-dev.service << 'EOF'
